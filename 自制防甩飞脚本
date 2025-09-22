@@ -1,0 +1,88 @@
+-- 防甩飞脚本，带有开关GUI，适用于多种注入器
+-- 此脚本在启用时将你的角色的HumanoidRootPart CanCollide设置为false（以防止甩飞，通过使与其他玩家的碰撞为零-like），
+-- 禁用时恢复为true。GUI可拖动，并从右上角开始。
+
+local player = game.Players.LocalPlayer
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = game.CoreGui  -- 使用CoreGui以兼容注入器
+screenGui.ResetOnSpawn = false
+
+-- 创建临时提示GUI（显示3秒后消失，仅本地可见）
+local promptFrame = Instance.new("Frame")
+promptFrame.Size = UDim2.new(0, 300, 0, 50)
+promptFrame.Position = UDim2.new(0.5, -150, 0.5, -25)  -- 屏幕中央
+promptFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+promptFrame.BackgroundTransparency = 0.5
+promptFrame.BorderSizePixel = 0
+promptFrame.Parent = screenGui
+
+local promptText = Instance.new("TextLabel")
+promptText.Size = UDim2.new(1, 0, 1, 0)
+promptText.BackgroundTransparency = 1
+promptText.Text = "XTTT防甩脚本已开启"
+promptText.TextColor3 = Color3.fromRGB(0, 255, 0)
+promptText.Font = Enum.Font.SourceSansBold
+promptText.TextSize = 24
+promptText.Parent = promptFrame
+
+-- 3秒后销毁提示
+spawn(function()
+    wait(3)
+    promptFrame:Destroy()
+end)
+
+-- 创建主框架（可拖动容器）
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 150, 0, 50)
+frame.Position = UDim2.new(1, -160, 0, 10)  -- 右上角，偏移框架宽度 + 边距
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 0
+frame.Active = true  -- 用于拖动
+frame.Draggable = true  -- 使框架可拖动
+frame.Parent = screenGui
+
+-- 创建开关按钮
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(1, 0, 1, 0)
+toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)  -- 开始为红色（禁用）
+toggleButton.Text = "防甩飞: 关闭"
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Parent = frame
+
+-- 变量跟踪开关状态
+local isEnabled = false
+
+-- 函数更新碰撞
+local function updateCollision(enable)
+    local character = player.Character
+    if character then
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.CanCollide = not enable  -- 启用时为false（碰撞“零”），禁用时为true
+        end
+    end
+end
+
+-- 开关逻辑
+toggleButton.MouseButton1Click:Connect(function()
+    isEnabled = not isEnabled
+    if isEnabled then
+        toggleButton.BackgroundColor3 = Color3.fromRGB(0, 255, 0)  -- 启用时绿色
+        toggleButton.Text = "防甩飞: 开启"
+        updateCollision(true)
+    else
+        toggleButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)  -- 禁用时红色
+        toggleButton.Text = "防甩飞: 关闭"
+        updateCollision(false)
+    end
+end)
+
+-- 处理角色重生（如果启用，重新应用）
+player.CharacterAdded:Connect(function(newCharacter)
+    if isEnabled then
+        wait(0.1)  -- 小延迟等待部件加载
+        updateCollision(true)
+    end
+end)
