@@ -1,329 +1,511 @@
--- 防甩飞脚本 - 双模式完整版
--- 提供两种防护模式：方法一（基础防护）和方法二（高级防护）
--- GUI可拖动，提示信息智能显示不遮挡
-
-local player = game.Players.LocalPlayer
+-- Roblox手机端极速传送脚本 (UI优化增强版)
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local Lighting = game:GetService("Lighting")
+local Camera = workspace.CurrentCamera
 
--- 创建主GUI
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "AntiThrowDualMode"
-screenGui.Parent = game.CoreGui
-screenGui.ResetOnSpawn = false
+-- UI配置
+local UI = {
+    ButtonSize = UDim2.new(0, 100, 0, 30),
+    Spacing = UDim2.new(0, 0, 0, 5),
+    ContainerHeight = 175,
+    ContainerWidth = 110
+}
 
--- 创建圆形开关按钮（初始显示在屏幕左侧）- 改为TextButton
-local toggleButton = Instance.new("TextButton") -- 改为TextButton而不是Frame
-toggleButton.Size = UDim2.new(0, 40, 0, 40) -- 小拇指大小的圆形
-toggleButton.Position = UDim2.new(0, 10, 0.5, -20) -- 左侧中央
-toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-toggleButton.BorderSizePixel = 2
-toggleButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
-toggleButton.Text = "" -- 清空文本，我们将使用TextLabel显示文本
-toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleButton.Font = Enum.Font.SourceSansBold
-toggleButton.TextSize = 14
-toggleButton.Active = true
-toggleButton.Draggable = true
-toggleButton.Parent = screenGui
+local Teleport = {
+    Active = false,
+    Target = nil,
+    Origin = nil,
+    Connection = nil,
+    PlayerList = {},
+    AntiThrow = false,
+    BodyForce = nil,
+    LastPosition = nil,
+    WallVision = false,
+    OriginalTransparency = {},
+    UIVisible = false -- 控制UI显示状态
+}
 
--- 设置为圆形
-local corner = Instance.new("UICorner")
-corner.CornerRadius = UDim.new(1, 0) -- 完全圆形
-corner.Parent = toggleButton
+-- 创建按钮
+local function CreateButton(name, parent, position, isStateButton)
+    local button = Instance.new("TextButton")
+    button.Name = name
+    button.Size = UI.ButtonSize
+    button.Position = position
+    button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+    button.BackgroundTransparency = 0.25
+    button.TextColor3 = Color3.new(1, 1, 1)
+    button.Text = name
+    button.TextSize = 14
+    button.Parent = parent
+    
+    -- 状态指示器
+    if isStateButton then
+        local stateIndicator = Instance.new("Frame")
+        stateIndicator.Name = "StateIndicator"
+        stateIndicator.Size = UDim2.new(0, 8, 0, 8)
+        stateIndicator.Position = UDim2.new(1, -10, 0, 5)
+        stateIndicator.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+        stateIndicator.BorderSizePixel = 0
+        stateIndicator.Parent = button
+    end
 
-local toggleText = Instance.new("TextLabel")
-toggleText.Size = UDim2.new(1, 0, 1, 0)
-toggleText.BackgroundTransparency = 1
-toggleText.Text = "关" -- 初始状态为关闭（按钮隐藏）
-toggleText.TextColor3 = Color3.fromRGB(255, 255, 255)
-toggleText.Font = Enum.Font.SourceSansBold
-toggleText.TextSize = 14
-toggleText.Parent = toggleButton
+    -- 点击处理
+    local lastTap = 0
+    button.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            if os.clock() - lastTap < 0.5 then return end
+            lastTap = os.clock()
 
--- 创建主提示信息（显示5秒）
-local mainPromptFrame = Instance.new("Frame")
-mainPromptFrame.Size = UDim2.new(0, 400, 0, 120)
-mainPromptFrame.Position = UDim2.new(0.5, -200, 0.1, 0)  -- 顶部中央，不遮挡重要UI
-mainPromptFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-mainPromptFrame.BackgroundTransparency = 0.3
-mainPromptFrame.BorderSizePixel = 2
-mainPromptFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
-mainPromptFrame.Parent = screenGui
-
-local mainPromptText = Instance.new("TextLabel")
-mainPromptText.Size = UDim2.new(1, -10, 1, -10)
-mainPromptText.Position = UDim2.new(0, 5, 0, 5)
-mainPromptText.BackgroundTransparency = 1
-mainPromptText.Text = "XTTT防甩飞脚本已加载\n\n左侧圆形按钮控制界面显示\n\n方法一：基础防护 - 正常移动状态下防甩飞\n方法二：高级防护 - 防护更全面但影响移动\n\n5秒后本提示自动关闭"
-mainPromptText.TextColor3 = Color3.fromRGB(0, 255, 0)
-mainPromptText.Font = Enum.Font.SourceSansBold
-mainPromptText.TextSize = 16
-mainPromptText.TextWrapped = true
-mainPromptText.Parent = mainPromptFrame
-
--- 5秒后销毁主提示
-spawn(function()
-    wait(5)
-    mainPromptFrame:Destroy()
-end)
-
--- 创建方法一框架（基础防护）- 初始隐藏
-local method1Frame = Instance.new("Frame")
-method1Frame.Size = UDim2.new(0, 160, 0, 50)
-method1Frame.Position = UDim2.new(1, -170, 0, 10)  -- 右上角
-method1Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-method1Frame.BorderSizePixel = 2
-method1Frame.BorderColor3 = Color3.fromRGB(100, 100, 100)
-method1Frame.Active = true
-method1Frame.Draggable = true
-method1Frame.Visible = false  -- 初始隐藏
-method1Frame.Parent = screenGui
-
-local method1Button = Instance.new("TextButton")
-method1Button.Size = UDim2.new(1, 0, 1, 0)
-method1Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 初始红色（关闭）
-method1Button.Text = "方法一: 关闭"
-method1Button.TextColor3 = Color3.fromRGB(255, 255, 255)
-method1Button.Font = Enum.Font.SourceSansBold
-method1Button.TextSize = 14
-method1Button.Parent = method1Frame
-
--- 创建方法二框架（高级防护）- 初始隐藏
-local method2Frame = Instance.new("Frame")
-method2Frame.Size = UDim2.new(0, 160, 0, 50)
-method2Frame.Position = UDim2.new(1, -170, 0, 70)  -- 方法一下方
-method2Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-method2Frame.BorderSizePixel = 2
-method2Frame.BorderColor3 = Color3.fromRGB(100, 100, 100)
-method2Frame.Active = true
-method2Frame.Draggable = true
-method2Frame.Visible = false  -- 初始隐藏
-method2Frame.Parent = screenGui
-
-local method2Button = Instance.new("TextButton")
-method2Button.Size = UDim2.new(1, 0, 1, 0)
-method2Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 初始红色（关闭）
-method2Button.Text = "方法二: 关闭"
-method2Button.TextColor3 = Color3.fromRGB(255, 255, 255)
-method2Button.Font = Enum.Font.SourceSansBold
-method2Button.TextSize = 14
-method2Button.Parent = method2Frame
-
--- 状态变量
-local method1Enabled = false
-local method2Enabled = false
-local protectionConnection = nil
-local buttonsVisible = false  -- 记录按钮显示状态
-
--- 显示方法冲突提示
-local function showMethodConflictPrompt()
-    local conflictFrame = Instance.new("Frame")
-    conflictFrame.Size = UDim2.new(0, 300, 0, 80)
-    conflictFrame.Position = UDim2.new(0.5, -150, 0.3, 0)
-    conflictFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-    conflictFrame.BackgroundTransparency = 0.3
-    conflictFrame.BorderSizePixel = 2
-    conflictFrame.BorderColor3 = Color3.fromRGB(255, 100, 100)
-    conflictFrame.Parent = screenGui
-
-    local conflictText = Instance.new("TextLabel")
-    conflictText.Size = UDim2.new(1, -10, 1, -10)
-    conflictText.Position = UDim2.new(0, 5, 0, 5)
-    conflictText.BackgroundTransparency = 1
-    conflictText.Text = "⚠️ 请先关闭另一个方法\n两种防护模式不能同时启用"
-    conflictText.TextColor3 = Color3.fromRGB(255, 100, 100)
-    conflictText.Font = Enum.Font.SourceSansBold
-    conflictText.TextSize = 16
-    conflictText.TextWrapped = true
-    conflictText.Parent = conflictFrame
-
-    -- 3秒后销毁提示
-    spawn(function()
-        wait(3)
-        conflictFrame:Destroy()
+            if name == "开始" then
+                StartTeleport()
+            elseif name == "换人" then
+                SwapTarget()
+            elseif name == "结束" then
+                StopTeleport()
+            elseif name == "防甩" then
+                ToggleAntiThrow()
+            elseif name == "视野" then
+                ToggleWallVision()
+            end
+        end
     end)
+
+    return button
 end
 
--- 方法一：基础防护（原脚本逻辑）
-local function updateMethod1Collision(enable)
-    local character = player.Character
-    if character then
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        if humanoidRootPart then
-            humanoidRootPart.CanCollide = not enable
+-- 更新按钮状态显示
+local function UpdateButtonState(buttonName, isActive)
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+    local screenGui = playerGui:FindFirstChild("NinjaInjectorUI")
+    if not screenGui then return end
+    
+    local container = screenGui:FindFirstChild("ButtonContainer")
+    if not container then return end
+    
+    local button = container:FindFirstChild(buttonName)
+    if button then
+        local stateIndicator = button:FindFirstChild("StateIndicator")
+        if stateIndicator then
+            if isActive then
+                stateIndicator.BackgroundColor3 = Color3.fromRGB(0, 255, 0) -- 绿色（开启）
+                button.BackgroundColor3 = Color3.fromRGB(0, 60, 0) -- 深绿色背景
+            else
+                stateIndicator.BackgroundColor3 = Color3.fromRGB(255, 0, 0) -- 红色（关闭）
+                button.BackgroundColor3 = Color3.fromRGB(60, 0, 0) -- 深红色背景
+            end
         end
     end
 end
 
--- 方法二：高级防护（优化版逻辑）
-local function applyMethod2Protection()
-    local character = player.Character
+-- 创建圆形开关按钮
+local function CreateToggleButton()
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    -- 创建圆形开关的ScreenGui
+    local toggleScreenGui = Instance.new("ScreenGui")
+    toggleScreenGui.Name = "TeleportToggleUI"
+    toggleScreenGui.ResetOnSpawn = false
+    toggleScreenGui.Parent = playerGui
+
+    -- 创建圆形开关按钮（放在屏幕左上角）
+    local toggleButton = Instance.new("TextButton")
+    toggleButton.Name = "ToggleButton"
+    toggleButton.Size = UDim2.new(0, 40, 0, 40)
+    toggleButton.Position = UDim2.new(0, 10, 0, 10) -- 左上角
+    toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+    toggleButton.BorderSizePixel = 2
+    toggleButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
+    toggleButton.Text = "传送"
+    toggleButton.TextColor3 = Color3.new(1, 1, 1)
+    toggleButton.Font = Enum.Font.SourceSansBold
+    toggleButton.TextSize = 12
+    toggleButton.Active = true
+    toggleButton.Parent = toggleScreenGui
+
+    -- 设置为圆形
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(1, 0) -- 完全圆形
+    corner.Parent = toggleButton
+
+    -- 开关按钮点击事件
+    toggleButton.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            ToggleTeleportUI()
+        end
+    end)
+
+    return toggleButton
+end
+
+-- 切换传送UI显示/隐藏
+function ToggleTeleportUI()
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+    local screenGui = playerGui:FindFirstChild("NinjaInjectorUI")
+    
+    if not screenGui then
+        -- 如果UI不存在，创建它
+        InitTeleportUI()
+        Teleport.UIVisible = true
+    else
+        -- 切换显示状态
+        Teleport.UIVisible = not Teleport.UIVisible
+        screenGui.Enabled = Teleport.UIVisible
+    end
+    
+    -- 更新开关按钮文本
+    local toggleScreenGui = playerGui:FindFirstChild("TeleportToggleUI")
+    if toggleScreenGui then
+        local toggleButton = toggleScreenGui:FindFirstChild("ToggleButton")
+        if toggleButton then
+            if Teleport.UIVisible then
+                toggleButton.Text = "隐藏"
+                toggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+            else
+                toggleButton.Text = "传送"
+                toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+            end
+        end
+    end
+end
+
+-- 初始化传送UI（放在屏幕右上角）
+local function InitTeleportUI()
+    local player = Players.LocalPlayer
+    local playerGui = player:WaitForChild("PlayerGui")
+
+    -- 创建ScreenGui
+    local screenGui = Instance.new("ScreenGui")
+    screenGui.Name = "NinjaInjectorUI"
+    screenGui.ResetOnSpawn = false
+    screenGui.Parent = playerGui
+
+    -- 创建容器（放在屏幕右上角）
+    local container = Instance.new("Frame")
+    container.Name = "ButtonContainer"
+    container.Size = UDim2.new(0, UI.ContainerWidth, 0, UI.ContainerHeight)
+    container.Position = UDim2.new(1, -120, 0, 10) -- 右上角位置
+    container.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+    container.BackgroundTransparency = 0.3
+    container.BorderSizePixel = 0
+    container.Parent = screenGui
+
+    -- 创建拖动区域（覆盖整个容器但透明）
+    local dragArea = Instance.new("TextButton")
+    dragArea.Name = "DragArea"
+    dragArea.Size = UDim2.new(1, 0, 1, 0)
+    dragArea.Position = UDim2.new(0, 0, 0, 0)
+    dragArea.BackgroundTransparency = 1
+    dragArea.Text = ""
+    dragArea.TextTransparency = 1
+    dragArea.Parent = container
+
+    -- 创建按钮 - 垂直排列
+    local startY = 5
+    CreateButton("开始", container, UDim2.new(0, 5, 0, startY), false)
+    CreateButton("换人", container, UDim2.new(0, 5, 0, startY + 35), false)
+    CreateButton("结束", container, UDim2.new(0, 5, 0, startY + 70), false)
+    CreateButton("防甩", container, UDim2.new(0, 5, 0, startY + 105), true)
+    CreateButton("视野", container, UDim2.new(0, 5, 0, startY + 140), true)
+
+    -- 初始化状态显示
+    UpdateButtonState("防甩", Teleport.AntiThrow)
+    UpdateButtonState("视野", Teleport.WallVision)
+
+    -- 整个UI可拖动（使用透明拖动区域）
+    local dragStartPos, containerStartPos
+    dragArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            dragStartPos = input.Position
+            containerStartPos = Vector2.new(container.AbsolutePosition.X, container.AbsolutePosition.Y)
+        end
+    end)
+
+    UIS.InputChanged:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch and dragStartPos then
+            local delta = input.Position - dragStartPos
+            container.Position = UDim2.new(0, containerStartPos.X + delta.X, 0, containerStartPos.Y + delta.Y)
+        end
+    end)
+
+    UIS.InputEnded:Connect(function()
+        dragStartPos = nil
+    end)
+
+    print("传送UI已创建 - 位置：右上角")
+end
+
+-- 初始化UI系统
+local function InitUI()
+    -- 创建圆形开关按钮
+    CreateToggleButton()
+    
+    -- 初始状态：传送UI隐藏
+    Teleport.UIVisible = false
+    
+    print("UI系统已初始化 - 点击左上角圆形按钮显示传送面板")
+end
+
+-- 视野穿墙模式
+function ToggleWallVision()
+    Teleport.WallVision = not Teleport.WallVision
+    UpdateButtonState("视野", Teleport.WallVision)
+
+    if Teleport.WallVision then
+        -- 启用视野穿墙
+        Teleport.OriginalTransparency = {}
+
+        -- 使所有墙壁透明
+        for _, part in ipairs(workspace:GetDescendants()) do
+            if part:IsA("BasePart") and part.Transparency < 0.5 then
+                Teleport.OriginalTransparency[part] = part.Transparency
+                part.Transparency = 0.7
+            end
+        end
+
+        -- 使地面透明
+        for _, terrain in ipairs(workspace:GetChildren()) do
+            if terrain:IsA("Terrain") then
+                Teleport.OriginalTransparency[terrain] = terrain.Transparency
+                terrain.Transparency = 0.6
+            end
+        end
+
+        print("视野穿墙模式已启用")
+    else
+        -- 禁用视野穿墙
+        for part, transparency in pairs(Teleport.OriginalTransparency) do
+            if part:IsA("BasePart") or part:IsA("Terrain") then
+                part.Transparency = transparency
+            end
+        end
+        Teleport.OriginalTransparency = {}
+        print("视野穿墙模式已禁用")
+    end
+end
+
+-- 获取所有玩家列表
+local function GetAllPlayers()
+    local players = {}
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= Players.LocalPlayer then
+            table.insert(players, player)
+        end
+    end
+    return players
+end
+
+-- 寻找最近玩家
+local function FindNearestPlayer()
+    local nearest, minDist = nil, math.huge
+    local myChar = Players.LocalPlayer.Character
+    if not myChar then return end
+
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+
+    for _, player in ipairs(Teleport.PlayerList) do
+        local char = player.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local dist = (myRoot.Position - char.HumanoidRootPart.Position).Magnitude
+            if dist < minDist then
+                minDist = dist
+                nearest = player
+            end
+        end
+    end
+    return nearest
+end
+
+-- 设置零重力
+local function SetZeroGravity(character)
     if not character then return end
     
     local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoidRootPart then return end
     
-    if humanoidRootPart then
-        -- 减少物理影响
-        humanoidRootPart.CanCollide = false
-        humanoidRootPart.Massless = true
-        
-        -- 稳定角色位置
-        humanoidRootPart.Velocity = Vector3.new(0, humanoidRootPart.Velocity.Y, 0)
-        humanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
-        
-        -- 限制最大下落速度
-        if humanoidRootPart.Velocity.Y < -100 then
-            humanoidRootPart.Velocity = Vector3.new(
-                humanoidRootPart.Velocity.X,
-                -100,
-                humanoidRootPart.Velocity.Z
-            )
-        end
+    -- 移除现有BodyForce
+    if Teleport.BodyForce then
+        Teleport.BodyForce:Destroy()
+        Teleport.BodyForce = nil
     end
     
-    if humanoid then
-        humanoid.PlatformStand = false
+    -- 创建新的BodyForce抵消重力
+    Teleport.BodyForce = Instance.new("BodyForce")
+    Teleport.BodyForce.Name = "AntiGravity"
+    Teleport.BodyForce.Force = Vector3.new(0, workspace.Gravity * humanoidRootPart:GetMass(), 0)
+    Teleport.BodyForce.Parent = humanoidRootPart
+end
+
+-- 移除零重力
+local function RemoveZeroGravity()
+    if Teleport.BodyForce then
+        Teleport.BodyForce:Destroy()
+        Teleport.BodyForce = nil
     end
 end
 
--- 禁用所有防护
-local function disableAllProtection()
-    -- 停止持续监控
-    if protectionConnection then
-        protectionConnection:Disconnect()
-        protectionConnection = nil
+-- 检测异常移动（防甩核心）
+local function CheckAbnormalMovement(currentPos)
+    if not Teleport.LastPosition then
+        Teleport.LastPosition = currentPos
+        return false
     end
     
-    -- 恢复默认设置
-    local character = player.Character
-    if character then
-        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
-        if humanoidRootPart then
-            humanoidRootPart.CanCollide = true
-            humanoidRootPart.Massless = false
+    local distance = (currentPos - Teleport.LastPosition).Magnitude
+    Teleport.LastPosition = currentPos
+    
+    -- 如果移动距离超过预期值，视为异常移动
+    return distance > 10 -- 可根据需要调整阈值
+end
+
+-- 传送逻辑 - 增强防甩和重力控制
+local function TeleportRoutine()
+    if not Teleport.Active then return end
+
+    local myChar = Players.LocalPlayer.Character
+    local targetChar = Teleport.Target and Teleport.Target.Character
+
+    if not myChar or not targetChar then
+        StopTeleport()
+        return
+    end
+
+    local myRoot = myChar:FindFirstChild("HumanoidRootPart")
+    local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
+
+    if myRoot and targetRoot then
+        -- 检测异常移动（防甩）
+        if CheckAbnormalMovement(myRoot.Position) then
+            print("检测到异常移动，重新传送到目标下方")
         end
+        
+        -- 设置零重力防止掉落
+        SetZeroGravity(myChar)
+        
+        -- 正下方传送：5.5格高度
+        local newPos = Vector3.new(
+            targetRoot.Position.X,
+            targetRoot.Position.Y - 5.5, -- 正下方5.5格
+            targetRoot.Position.Z
+        )
+
+        -- 设置位置并面向目标
+        myRoot.CFrame = CFrame.new(newPos, targetRoot.Position)
     end
 end
 
--- 圆形开关按钮点击事件
-toggleButton.MouseButton1Click:Connect(function()
-    buttonsVisible = not buttonsVisible  -- 切换显示状态
-    
-    -- 更新按钮可见性
-    method1Frame.Visible = buttonsVisible
-    method2Frame.Visible = buttonsVisible
-    
-    -- 更新圆形按钮文字
-    if buttonsVisible then
-        toggleText.Text = "开"
-        toggleButton.BackgroundColor3 = Color3.fromRGB(80, 180, 80)  -- 绿色表示开启
-    else
-        toggleText.Text = "关"
-        toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)  -- 灰色表示关闭
-    end
-    
-    print("按钮状态切换: " .. (buttonsVisible and "显示" or "隐藏"))
-end)
+-- 增强防甩模式 - 循环传送确保始终在目标下方
+function ToggleAntiThrow()
+    Teleport.AntiThrow = not Teleport.AntiThrow
+    UpdateButtonState("防甩", Teleport.AntiThrow)
 
--- 方法一开关逻辑
-method1Button.MouseButton1Click:Connect(function()
-    if method2Enabled then
-        -- 显示提示：方法二正在运行，需要先关闭
-        showMethodConflictPrompt()
+    if Teleport.AntiThrow then
+        print("增强防甩模式已启用 - 循环传送确保位置")
+    else
+        print("防甩模式已禁用")
+    end
+end
+
+-- 按钮功能
+function StartTeleport()
+    if Teleport.Active then return end
+
+    Teleport.Origin = Players.LocalPlayer.Character.HumanoidRootPart.CFrame
+    Teleport.PlayerList = GetAllPlayers()
+    Teleport.Target = FindNearestPlayer()
+
+    if not Teleport.Target then
+        warn("未找到目标玩家")
         return
     end
-    
-    method1Enabled = not method1Enabled
-    
-    if method1Enabled then
-        method1Button.BackgroundColor3 = Color3.fromRGB(60, 255, 60)  -- 绿色（开启）
-        method1Button.Text = "方法一: 开启"
-        updateMethod1Collision(true)
-        showMethod1ActivePrompt()
-    else
-        method1Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 红色（关闭）
-        method1Button.Text = "方法一: 关闭"
-        updateMethod1Collision(false)
-    end
-end)
 
--- 方法二开关逻辑
-method2Button.MouseButton1Click:Connect(function()
-    if method1Enabled then
-        -- 显示提示：方法一正在运行，需要先关闭
-        showMethodConflictPrompt()
+    Teleport.Active = true
+    Teleport.Connection = RunService.Heartbeat:Connect(function()
+        TeleportRoutine()
+        task.wait(0.001) -- 0.001秒间隔
+    end)
+    
+    print("传送开始 - 目标: "..Teleport.Target.Name)
+end
+
+-- 换人功能
+function SwapTarget()
+    if not Teleport.Active then return end
+
+    Teleport.PlayerList = GetAllPlayers()
+
+    if #Teleport.PlayerList == 0 then
+        warn("没有其他玩家可切换")
         return
     end
-    
-    method2Enabled = not method2Enabled
-    
-    if method2Enabled then
-        method2Button.BackgroundColor3 = Color3.fromRGB(60, 255, 60)  -- 绿色（开启）
-        method2Button.Text = "方法二: 开启"
-        
-        -- 立即应用防护
-        applyMethod2Protection()
-        
-        -- 启动持续监控
-        if protectionConnection then
-            protectionConnection:Disconnect()
-        end
-        protectionConnection = RunService.Heartbeat:Connect(applyMethod2Protection)
-        
-        showMethod2ActivePrompt()
-    else
-        method2Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 红色（关闭）
-        method2Button.Text = "方法二: 关闭"
-        disableAllProtection()
-    end
-end)
 
--- 角色重生处理
-player.CharacterAdded:Connect(function(newCharacter)
-    wait(0.5) -- 等待角色完全加载
-    
-    if method1Enabled then
-        -- 方法一：简单重新应用碰撞设置
-        wait(0.1)
-        updateMethod1Collision(true)
-    elseif method2Enabled then
-        -- 方法二：重新启用高级防护
-        wait(0.5)
-        if method2Enabled then
-            applyMethod2Protection()
-            if not protectionConnection then
-                protectionConnection = RunService.Heartbeat:Connect(applyMethod2Protection)
-            end
+    local currentIndex = 1
+    for i, player in ipairs(Teleport.PlayerList) do
+        if player == Teleport.Target then
+            currentIndex = i
+            break
         end
     end
-end)
 
--- 角色移除时清理
-player.CharacterRemoving:Connect(function()
-    if protectionConnection then
-        protectionConnection:Disconnect()
-        protectionConnection = nil
+    local nextIndex = currentIndex % #Teleport.PlayerList + 1
+    Teleport.Target = Teleport.PlayerList[nextIndex]
+
+    print("已切换到: "..Teleport.Target.Name)
+end
+
+-- 结束功能
+function StopTeleport()
+    if not Teleport.Active then return end
+
+    Teleport.Active = false
+    if Teleport.Connection then
+        Teleport.Connection:Disconnect()
+    end
+    
+    -- 移除零重力
+    RemoveZeroGravity()
+    
+    Teleport.LastPosition = nil
+
+    print("传送已停止，重力已恢复")
+end
+
+-- 玩家加入/离开事件
+Players.PlayerAdded:Connect(function(player)
+    if player ~= Players.LocalPlayer then
+        table.insert(Teleport.PlayerList, player)
     end
 end)
 
--- 防止GUI重叠的简单调整（如果用户拖动到相同位置）
-spawn(function()
-    while true do
-        wait(1)
-        if buttonsVisible then
-            local pos1 = method1Frame.Position
-            local pos2 = method2Frame.Position
-            
-            -- 如果两个框架位置太近，自动调整方法二的位置
-            if (pos1.X.Offset - pos2.X.Offset)^2 + (pos1.Y.Offset - pos2.Y.Offset)^2 < 10000 then
-                method2Frame.Position = UDim2.new(pos1.X.Scale, pos1.X.Offset, pos1.Y.Scale, pos1.Y.Offset + 60)
-            end
+Players.PlayerRemoving:Connect(function(player)
+    for i, p in ipairs(Teleport.PlayerList) do
+        if p == player then
+            table.remove(Teleport.PlayerList, i)
+            break
         end
     end
 end)
 
-print("双模式防甩飞脚本加载完成")
-print("左侧圆形按钮控制界面显示")
-print("方法一：基础防护 - 正常移动状态下防甩飞")
-print("方法二：高级防护 - 防护更全面但影响移动")
+-- 异常处理
+Players.LocalPlayer.CharacterAdded:Connect(function(char)
+    char:WaitForChild("Humanoid").Died:Connect(function()
+        if Teleport.Active then
+            StopTeleport()
+        end
+    end)
+    
+    -- 角色重生时重新应用零重力
+    if Teleport.Active then
+        wait(1) -- 等待角色完全加载
+        SetZeroGravity(char)
+    end
+end)
+
+-- 执行
+InitUI()
+print("传送脚本加载完成 | 点击左上角圆形按钮显示控制面板 | 初始位置：右上角")
