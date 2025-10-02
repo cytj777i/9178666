@@ -23,8 +23,7 @@ local Teleport = {
     BodyForce = nil,
     LastPosition = nil,
     WallVision = false,
-    OriginalTransparency = {},
-    UIVisible = false -- 控制UI显示状态
+    OriginalTransparency = {}
 }
 
 -- 创建按钮
@@ -50,27 +49,6 @@ local function CreateButton(name, parent, position, isStateButton)
         stateIndicator.BorderSizePixel = 0
         stateIndicator.Parent = button
     end
-
-    -- 点击处理
-    local lastTap = 0
-    button.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            if os.clock() - lastTap < 0.5 then return end
-            lastTap = os.clock()
-
-            if name == "开始" then
-                StartTeleport()
-            elseif name == "换人" then
-                SwapTarget()
-            elseif name == "结束" then
-                StopTeleport()
-            elseif name == "防甩" then
-                ToggleAntiThrow()
-            elseif name == "视野" then
-                ToggleWallVision()
-            end
-        end
-    end)
 
     return button
 end
@@ -100,81 +78,8 @@ local function UpdateButtonState(buttonName, isActive)
     end
 end
 
--- 创建圆形开关按钮
-local function CreateToggleButton()
-    local player = Players.LocalPlayer
-    local playerGui = player:WaitForChild("PlayerGui")
-
-    -- 创建圆形开关的ScreenGui
-    local toggleScreenGui = Instance.new("ScreenGui")
-    toggleScreenGui.Name = "TeleportToggleUI"
-    toggleScreenGui.ResetOnSpawn = false
-    toggleScreenGui.Parent = playerGui
-
-    -- 创建圆形开关按钮（放在屏幕左上角）
-    local toggleButton = Instance.new("TextButton")
-    toggleButton.Name = "ToggleButton"
-    toggleButton.Size = UDim2.new(0, 40, 0, 40)
-    toggleButton.Position = UDim2.new(0, 10, 0, 10) -- 左上角
-    toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    toggleButton.BorderSizePixel = 2
-    toggleButton.BorderColor3 = Color3.fromRGB(100, 100, 100)
-    toggleButton.Text = "传送"
-    toggleButton.TextColor3 = Color3.new(1, 1, 1)
-    toggleButton.Font = Enum.Font.SourceSansBold
-    toggleButton.TextSize = 12
-    toggleButton.Active = true
-    toggleButton.Parent = toggleScreenGui
-
-    -- 设置为圆形
-    local corner = Instance.new("UICorner")
-    corner.CornerRadius = UDim.new(1, 0) -- 完全圆形
-    corner.Parent = toggleButton
-
-    -- 开关按钮点击事件
-    toggleButton.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            ToggleTeleportUI()
-        end
-    end)
-
-    return toggleButton
-end
-
--- 切换传送UI显示/隐藏
-function ToggleTeleportUI()
-    local player = Players.LocalPlayer
-    local playerGui = player:WaitForChild("PlayerGui")
-    local screenGui = playerGui:FindFirstChild("NinjaInjectorUI")
-    
-    if not screenGui then
-        -- 如果UI不存在，创建它
-        InitTeleportUI()
-        Teleport.UIVisible = true
-    else
-        -- 切换显示状态
-        Teleport.UIVisible = not Teleport.UIVisible
-        screenGui.Enabled = Teleport.UIVisible
-    end
-    
-    -- 更新开关按钮文本
-    local toggleScreenGui = playerGui:FindFirstChild("TeleportToggleUI")
-    if toggleScreenGui then
-        local toggleButton = toggleScreenGui:FindFirstChild("ToggleButton")
-        if toggleButton then
-            if Teleport.UIVisible then
-                toggleButton.Text = "隐藏"
-                toggleButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-            else
-                toggleButton.Text = "传送"
-                toggleButton.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            end
-        end
-    end
-end
-
--- 初始化传送UI（放在屏幕右上角）
-local function InitTeleportUI()
+-- 初始化UI - 右上角位置
+local function InitMobileUI()
     local player = Players.LocalPlayer
     local playerGui = player:WaitForChild("PlayerGui")
 
@@ -194,60 +99,88 @@ local function InitTeleportUI()
     container.BorderSizePixel = 0
     container.Parent = screenGui
 
-    -- 创建拖动区域（覆盖整个容器但透明）
-    local dragArea = Instance.new("TextButton")
-    dragArea.Name = "DragArea"
-    dragArea.Size = UDim2.new(1, 0, 1, 0)
-    dragArea.Position = UDim2.new(0, 0, 0, 0)
-    dragArea.BackgroundTransparency = 1
-    dragArea.Text = ""
-    dragArea.TextTransparency = 1
-    dragArea.Parent = container
-
     -- 创建按钮 - 垂直排列
     local startY = 5
-    CreateButton("开始", container, UDim2.new(0, 5, 0, startY), false)
-    CreateButton("换人", container, UDim2.new(0, 5, 0, startY + 35), false)
-    CreateButton("结束", container, UDim2.new(0, 5, 0, startY + 70), false)
-    CreateButton("防甩", container, UDim2.new(0, 5, 0, startY + 105), true)
-    CreateButton("视野", container, UDim2.new(0, 5, 0, startY + 140), true)
+    local buttons = {
+        CreateButton("开始", container, UDim2.new(0, 5, 0, startY), false),
+        CreateButton("换人", container, UDim2.new(0, 5, 0, startY + 35), false),
+        CreateButton("结束", container, UDim2.new(0, 5, 0, startY + 70), false),
+        CreateButton("防甩", container, UDim2.new(0, 5, 0, startY + 105), true),
+        CreateButton("视野", container, UDim2.new(0, 5, 0, startY + 140), true)
+    }
 
     -- 初始化状态显示
     UpdateButtonState("防甩", Teleport.AntiThrow)
     UpdateButtonState("视野", Teleport.WallVision)
 
-    -- 整个UI可拖动（使用透明拖动区域）
+    -- 整个UI可拖动（包括按钮区域）
     local dragStartPos, containerStartPos
-    dragArea.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.Touch then
-            dragStartPos = input.Position
+    local isDragging = false
+    
+    -- 为容器和所有按钮添加拖动支持
+    local function setupDrag(inputObject)
+        if inputObject.UserInputType == Enum.UserInputType.Touch then
+            dragStartPos = inputObject.Position
             containerStartPos = Vector2.new(container.AbsolutePosition.X, container.AbsolutePosition.Y)
+            isDragging = false -- 重置拖动状态
         end
-    end)
+    end
 
+    -- 容器拖动
+    container.InputBegan:Connect(setupDrag)
+    
+    -- 按钮拖动和点击处理
+    for _, button in ipairs(buttons) do
+        local lastTap = 0
+        local buttonName = button.Name
+        
+        button.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch then
+                setupDrag(input)
+                
+                -- 记录点击时间，用于区分点击和拖动
+                lastTap = os.clock()
+            end
+        end)
+        
+        button.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.Touch and not isDragging then
+                -- 如果不是拖动，并且点击间隔大于0.5秒，则执行按钮功能
+                if os.clock() - lastTap < 0.5 then
+                    if buttonName == "开始" then
+                        StartTeleport()
+                    elseif buttonName == "换人" then
+                        SwapTarget()
+                    elseif buttonName == "结束" then
+                        StopTeleport()
+                    elseif buttonName == "防甩" then
+                        ToggleAntiThrow()
+                    elseif buttonName == "视野" then
+                        ToggleWallVision()
+                    end
+                end
+            end
+        end)
+    end
+
+    -- 处理拖动
     UIS.InputChanged:Connect(function(input)
         if input.UserInputType == Enum.UserInputType.Touch and dragStartPos then
             local delta = input.Position - dragStartPos
-            container.Position = UDim2.new(0, containerStartPos.X + delta.X, 0, containerStartPos.Y + delta.Y)
+            -- 如果移动距离超过阈值，则视为拖动
+            if delta.Magnitude > 5 then
+                isDragging = true
+                container.Position = UDim2.new(0, containerStartPos.X + delta.X, 0, containerStartPos.Y + delta.Y)
+            end
         end
     end)
 
     UIS.InputEnded:Connect(function()
         dragStartPos = nil
+        isDragging = false
     end)
 
-    print("传送UI已创建 - 位置：右上角")
-end
-
--- 初始化UI系统
-local function InitUI()
-    -- 创建圆形开关按钮
-    CreateToggleButton()
-    
-    -- 初始状态：传送UI隐藏
-    Teleport.UIVisible = false
-    
-    print("UI系统已初始化 - 点击左上角圆形按钮显示传送面板")
+    print("传送UI已加载 - 位置：右上角，支持拖动操作")
 end
 
 -- 视野穿墙模式
@@ -507,5 +440,6 @@ Players.LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 -- 执行
-InitUI()
-print("传送脚本加载完成 | 点击左上角圆形按钮显示控制面板 | 初始位置：右上角")
+InitMobileUI()
+print("传送脚本加载完成 | 初始位置：右上角 | 支持按钮区域拖动")
+       
