@@ -1,0 +1,332 @@
+-- 防甩飞脚本 - 双模式完整版
+-- 提供两种防护模式：方法一（基础防护）和方法二（高级防护）
+-- GUI可拖动，提示信息智能显示不遮挡
+
+local player = game.Players.LocalPlayer
+local RunService = game:GetService("RunService")
+
+-- 创建主GUI
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AntiThrowDualMode"
+screenGui.Parent = game.CoreGui
+screenGui.ResetOnSpawn = false
+
+-- 创建主提示信息（显示5秒）
+local mainPromptFrame = Instance.new("Frame")
+mainPromptFrame.Size = UDim2.new(0, 400, 0, 120)
+mainPromptFrame.Position = UDim2.new(0.5, -200, 0.1, 0)  -- 顶部中央，不遮挡重要UI
+mainPromptFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+mainPromptFrame.BackgroundTransparency = 0.3
+mainPromptFrame.BorderSizePixel = 2
+mainPromptFrame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+mainPromptFrame.Parent = screenGui
+
+local mainPromptText = Instance.new("TextLabel")
+mainPromptText.Size = UDim2.new(1, -10, 1, -10)
+mainPromptText.Position = UDim2.new(0, 5, 0, 5)
+mainPromptText.BackgroundTransparency = 1
+mainPromptText.Text = "XTTT防甩飞脚本已加载\n\n方法一：基础防护 - 正常移动状态下防甩飞\n方法二：高级防护 - 防护更全面但影响移动\n\n5秒后本提示自动关闭"
+mainPromptText.TextColor3 = Color3.fromRGB(0, 255, 0)
+mainPromptText.Font = Enum.Font.SourceSansBold
+mainPromptText.TextSize = 16
+mainPromptText.TextWrapped = true
+mainPromptText.Parent = mainPromptFrame
+
+-- 5秒后销毁主提示
+spawn(function()
+    wait(5)
+    mainPromptFrame:Destroy()
+end)
+
+-- 创建方法一框架（基础防护）
+local method1Frame = Instance.new("Frame")
+method1Frame.Size = UDim2.new(0, 160, 0, 50)
+method1Frame.Position = UDim2.new(1, -170, 0, 10)  -- 右上角
+method1Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+method1Frame.BorderSizePixel = 2
+method1Frame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+method1Frame.Active = true
+method1Frame.Draggable = true
+method1Frame.Parent = screenGui
+
+local method1Button = Instance.new("TextButton")
+method1Button.Size = UDim2.new(1, 0, 1, 0)
+method1Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 初始红色（关闭）
+method1Button.Text = "方法一: 关闭"
+method1Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+method1Button.Font = Enum.Font.SourceSansBold
+method1Button.TextSize = 14
+method1Button.Parent = method1Frame
+
+-- 创建方法二框架（高级防护）
+local method2Frame = Instance.new("Frame")
+method2Frame.Size = UDim2.new(0, 160, 0, 50)
+method2Frame.Position = UDim2.new(1, -170, 0, 70)  -- 方法一下方
+method2Frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+method2Frame.BorderSizePixel = 2
+method2Frame.BorderColor3 = Color3.fromRGB(100, 100, 100)
+method2Frame.Active = true
+method2Frame.Draggable = true
+method2Frame.Parent = screenGui
+
+local method2Button = Instance.new("TextButton")
+method2Button.Size = UDim2.new(1, 0, 1, 0)
+method2Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 初始红色（关闭）
+method2Button.Text = "方法二: 关闭"
+method2Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+method2Button.Font = Enum.Font.SourceSansBold
+method2Button.TextSize = 14
+method2Button.Parent = method2Frame
+
+-- 状态变量
+local method1Enabled = false
+local method2Enabled = false
+local protectionConnection = nil
+
+-- 方法一：基础防护（原脚本逻辑）
+local function updateMethod1Collision(enable)
+    local character = player.Character
+    if character then
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.CanCollide = not enable
+        end
+    end
+end
+
+-- 方法二：高级防护（优化版逻辑）
+local function applyMethod2Protection()
+    local character = player.Character
+    if not character then return end
+    
+    local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    
+    if humanoidRootPart then
+        -- 减少物理影响
+        humanoidRootPart.CanCollide = false
+        humanoidRootPart.Massless = true
+        
+        -- 稳定角色位置
+        humanoidRootPart.Velocity = Vector3.new(0, humanoidRootPart.Velocity.Y, 0)
+        humanoidRootPart.RotVelocity = Vector3.new(0, 0, 0)
+        
+        -- 限制最大下落速度
+        if humanoidRootPart.Velocity.Y < -100 then
+            humanoidRootPart.Velocity = Vector3.new(
+                humanoidRootPart.Velocity.X,
+                -100,
+                humanoidRootPart.Velocity.Z
+            )
+        end
+    end
+    
+    if humanoid then
+        humanoid.PlatformStand = false
+    end
+end
+
+-- 禁用所有防护
+local function disableAllProtection()
+    -- 停止持续监控
+    if protectionConnection then
+        protectionConnection:Disconnect()
+        protectionConnection = nil
+    end
+    
+    -- 恢复默认设置
+    local character = player.Character
+    if character then
+        local humanoidRootPart = character:FindFirstChild("HumanoidRootPart")
+        if humanoidRootPart then
+            humanoidRootPart.CanCollide = true
+            humanoidRootPart.Massless = false
+        end
+    end
+end
+
+-- 方法一开关逻辑
+method1Button.MouseButton1Click:Connect(function()
+    if method2Enabled then
+        -- 显示提示：方法二正在运行，需要先关闭
+        showMethodConflictPrompt()
+        return
+    end
+    
+    method1Enabled = not method1Enabled
+    
+    if method1Enabled then
+        method1Button.BackgroundColor3 = Color3.fromRGB(60, 255, 60)  -- 绿色（开启）
+        method1Button.Text = "方法一: 开启"
+        updateMethod1Collision(true)
+        showMethod1ActivePrompt()
+    else
+        method1Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 红色（关闭）
+        method1Button.Text = "方法一: 关闭"
+        updateMethod1Collision(false)
+    end
+end)
+
+-- 方法二开关逻辑
+method2Button.MouseButton1Click:Connect(function()
+    if method1Enabled then
+        -- 显示提示：方法一正在运行，需要先关闭
+        showMethodConflictPrompt()
+        return
+    end
+    
+    method2Enabled = not method2Enabled
+    
+    if method2Enabled then
+        method2Button.BackgroundColor3 = Color3.fromRGB(60, 255, 60)  -- 绿色（开启）
+        method2Button.Text = "方法二: 开启"
+        
+        -- 立即应用防护
+        applyMethod2Protection()
+        
+        -- 启动持续监控
+        if protectionConnection then
+            protectionConnection:Disconnect()
+        end
+        protectionConnection = RunService.Heartbeat:Connect(applyMethod2Protection)
+        
+        showMethod2ActivePrompt()
+    else
+        method2Button.BackgroundColor3 = Color3.fromRGB(255, 60, 60)  -- 红色（关闭）
+        method2Button.Text = "方法二: 关闭"
+        disableAllProtection()
+    end
+end)
+
+-- 显示方法冲突提示
+local function showMethodConflictPrompt()
+    local conflictFrame = Instance.new("Frame")
+    conflictFrame.Size = UDim2.new(0, 300, 0, 80)
+    conflictFrame.Position = UDim2.new(0.5, -150, 0.3, 0)
+    conflictFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    conflictFrame.BackgroundTransparency = 0.3
+    conflictFrame.BorderSizePixel = 2
+    conflictFrame.BorderColor3 = Color3.fromRGB(255, 100, 100)
+    conflictFrame.Parent = screenGui
+
+    local conflictText = Instance.new("TextLabel")
+    conflictText.Size = UDim2.new(1, -10, 1, -10)
+    conflictText.Position = UDim2.new(0, 5, 0, 5)
+    conflictText.BackgroundTransparency = 1
+    conflictText.Text = "⚠️ 请先关闭另一个方法\n两种防护模式不能同时启用"
+    conflictText.TextColor3 = Color3.fromRGB(255, 100, 100)
+    conflictText.Font = Enum.Font.SourceSansBold
+    conflictText.TextSize = 16
+    conflictText.TextWrapped = true
+    conflictText.Parent = conflictFrame
+
+    -- 3秒后销毁提示
+    spawn(function()
+        wait(3)
+        conflictFrame:Destroy()
+    end)
+end
+
+-- 显示方法一激活提示
+local function showMethod1ActivePrompt()
+    local promptFrame = Instance.new("Frame")
+    promptFrame.Size = UDim2.new(0, 320, 0, 60)
+    promptFrame.Position = UDim2.new(0.5, -160, 0.2, 0)
+    promptFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    promptFrame.BackgroundTransparency = 0.3
+    promptFrame.BorderSizePixel = 2
+    promptFrame.BorderColor3 = Color3.fromRGB(0, 200, 0)
+    promptFrame.Parent = screenGui
+
+    local promptText = Instance.new("TextLabel")
+    promptText.Size = UDim2.new(1, -10, 1, -10)
+    promptText.Position = UDim2.new(0, 5, 0, 5)
+    promptText.BackgroundTransparency = 1
+    promptText.Text = "✅ 方法一已启用\n基础防护：可正常移动状态下防甩飞"
+    promptText.TextColor3 = Color3.fromRGB(0, 255, 0)
+    promptText.Font = Enum.Font.SourceSansBold
+    promptText.TextSize = 14
+    promptText.TextWrapped = true
+    promptText.Parent = promptFrame
+
+    -- 3秒后销毁提示
+    spawn(function()
+        wait(3)
+        promptFrame:Destroy()
+    end)
+end
+
+-- 显示方法二激活提示
+local function showMethod2ActivePrompt()
+    local promptFrame = Instance.new("Frame")
+    promptFrame.Size = UDim2.new(0, 320, 0, 80)
+    promptFrame.Position = UDim2.new(0.5, -160, 0.2, 0)
+    promptFrame.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+    promptFrame.BackgroundTransparency = 0.3
+    promptFrame.BorderSizePixel = 2
+    promptFrame.BorderColor3 = Color3.fromRGB(0, 200, 0)
+    promptFrame.Parent = screenGui
+
+    local promptText = Instance.new("TextLabel")
+    promptText.Size = UDim2.new(1, -10, 1, -10)
+    promptText.Position = UDim2.new(0, 5, 0, 5)
+    promptText.BackgroundTransparency = 1
+    promptText.Text = "✅ 方法二已启用\n高级防护：防止的甩飞方式更多但影响移动\n移动可能会感到不自然"
+    promptText.TextColor3 = Color3.fromRGB(0, 255, 0)
+    promptText.Font = Enum.Font.SourceSansBold
+    promptText.TextSize = 14
+    promptText.TextWrapped = true
+    promptText.Parent = promptFrame
+
+    -- 3秒后销毁提示
+    spawn(function()
+        wait(3)
+        promptFrame:Destroy()
+    end)
+end
+
+-- 角色重生处理
+player.CharacterAdded:Connect(function(newCharacter)
+    wait(0.5) -- 等待角色完全加载
+    
+    if method1Enabled then
+        -- 方法一：简单重新应用碰撞设置
+        wait(0.1)
+        updateMethod1Collision(true)
+    elseif method2Enabled then
+        -- 方法二：重新启用高级防护
+        wait(0.5)
+        if method2Enabled then
+            applyMethod2Protection()
+            if not protectionConnection then
+                protectionConnection = RunService.Heartbeat:Connect(applyMethod2Protection)
+            end
+        end
+    end
+end)
+
+-- 角色移除时清理
+player.CharacterRemoving:Connect(function()
+    if protectionConnection then
+        protectionConnection:Disconnect()
+        protectionConnection = nil
+    end
+end)
+
+-- 防止GUI重叠的简单调整（如果用户拖动到相同位置）
+spawn(function()
+    while true do
+        wait(1)
+        local pos1 = method1Frame.Position
+        local pos2 = method2Frame.Position
+        
+        -- 如果两个框架位置太近，自动调整方法二的位置
+        if (pos1.X.Offset - pos2.X.Offset)^2 + (pos1.Y.Offset - pos2.Y.Offset)^2 < 10000 then
+            method2Frame.Position = UDim2.new(pos1.X.Scale, pos1.X.Offset, pos1.Y.Scale, pos1.Y.Offset + 60)
+        end
+    end
+end)
+
+print("双模式防甩飞脚本加载完成")
+print("方法一：基础防护 - 正常移动状态下防甩飞")
+print("方法二：高级防护 - 防护更全面但影响移动")
